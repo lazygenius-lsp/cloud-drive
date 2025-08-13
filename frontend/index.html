@@ -1,12 +1,481 @@
-<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Cloud Disk</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>云盘系统</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: '#165DFF',
+            secondary: '#6B7280',
+            light: '#F9FAFB',
+            dark: '#1F2937',
+          },
+          fontFamily: {
+            inter: ['Inter', 'system-ui', 'sans-serif'],
+          },
+        }
+      }
+    }
+  </script>
+  <style type="text/tailwindcss">
+    @layer utilities {
+      .content-auto { content-visibility: auto; }
+      .hover-lift { @apply transition-all duration-300 hover:shadow-lg hover:-translate-y-0.5; }
+      .file-row { @apply grid grid-cols-12 items-center py-3 px-4 rounded-lg hover:bg-gray-50 transition-colors duration-200; }
+      .dropdown-enter { animation: dropdownEnter 0.2s ease-out forwards; }
+      @keyframes dropdownEnter { from { opacity: 0; transform: translateY(-10px);} to { opacity: 1; transform: translateY(0);} }
+    }
+  </style>
+</head>
+<body class="font-inter bg-gray-50 text-dark min-h-screen flex flex-col">
+  <!-- 顶部导航栏 -->
+  <header class="bg-white shadow-sm sticky top-0 z-10">
+    <div class="container mx-auto px-4 py-4 flex items-center justify-between">
+      <!-- Logo区域 -->
+      <div class="flex items-center space-x-4">
+        <div class="text-primary text-2xl">
+          <i class="fa fa-cloud"></i>
+        </div>
+        <h1 class="text-xl font-bold text-dark hidden sm:block">云盘系统</h1>
+      </div>
+
+      <!-- 搜索框 -->
+      <div class="relative flex-grow max-w-md mx-4">
+        <input id="searchInput" type="text" placeholder="搜索当前路径下的文件/文件夹…"
+               class="w-full pl-10 pr-4 py-2 rounded-lg border border-gray-200 focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none">
+        <div class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+          <i class="fa fa-search"></i>
+        </div>
+      </div>
+
+      <!-- 新建按钮 -->
+      <div class="flex items-center space-x-4">
+        <div class="relative" id="newButtonContainer">
+          <button id="newButton" class="flex items-center px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors duration-200">
+            <i class="fa fa-plus mr-2"></i>
+            <span>新建</span>
+          </button>
+
+          <!-- 新建菜单 -->
+          <div id="newMenu" class="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-xl border border-gray-100 hidden dropdown-enter z-20">
+            <ul class="py-1">
+              <li>
+                <button id="btnNewFolder" class="w-full text-left px-4 py-2 hover:bg-gray-100 transition-colors flex items-center">
+                  <i class="fa fa-folder-o mr-2 text-primary"></i>
+                  <span>新建文件夹</span>
+                </button>
+              </li>
+              <li>
+                <button id="btnUpload" class="w-full text-left px-4 py-2 hover:bg-gray-100 transition-colors flex items-center">
+                  <i class="fa fa-upload mr-2 text-primary"></i>
+                  <span>上传文件</span>
+                </button>
+              </li>
+            </ul>
+          </div>
+          <input id="fileInput" type="file" class="hidden" />
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- 主内容区 -->
+  <main class="flex-grow container mx-auto px-4 py-6">
+    <!-- 路径导航 -->
+    <div id="breadcrumbs" class="mb-6 flex items-center text-sm text-gray-500"></div>
+
+    <!-- 文件列表 -->
+    <div class="bg-white rounded-xl shadow-sm overflow-hidden">
+      <!-- 表头 -->
+      <div class="grid grid-cols-12 items-center py-3 px-4 border-b border-gray-100">
+        <div class="col-span-6 font-medium text-gray-500">名称</div>
+        <div class="col-span-4 font-medium text-gray-500">创建时间</div>
+        <div class="col-span-2 font-medium text-gray-500 text-right">操作</div>
+      </div>
+
+      <!-- 文件项容器 -->
+      <div id="fileList"></div>
+      <div id="listLoader" class="py-3 text-center text-gray-400 hidden">加载中…</div>
+      <div id="sentinel" class="h-2"></div>
+    </div>
+  </main>
+
+  <!-- 页脚 -->
+  <footer class="bg-white border-t border-gray-200 py-4">
+    <div class="container mx-auto px-4 text-center text-gray-500 text-sm">
+      <p>© 2025 云盘系统 - 版权所有</p>
+    </div>
+  </footer>
+
+  <!-- 更多操作菜单 -->
+  <div id="fileActionMenu" class="fixed bg-white rounded-lg shadow-xl border border-gray-100 hidden dropdown-enter w-48 z-50">
+    <ul class="py-1">
+      <li>
+        <button id="renameButton" class="w-full text-left px-4 py-2 hover:bg-gray-100 transition-colors flex items-center">
+          <i class="fa fa-pencil mr-2 text-primary"></i>
+          <span>重命名</span>
+        </button>
+      </li>
+      <li>
+        <button id="deleteButton" class="w-full text-left px-4 py-2 hover:bg-gray-100 transition-colors flex items-center text-red-500">
+          <i class="fa fa-trash-o mr-2"></i>
+          <span>删除</span>
+        </button>
+      </li>
+    </ul>
+  </div>
+
+  <!-- 重命名模态框 -->
+  <div id="renameModal" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50">
+    <div class="bg-white rounded-xl shadow-2xl w-full max-w-md p-6" onclick="event.stopPropagation()">
+      <div class="flex justify-between items-center mb-4">
+        <h3 class="text-xl font-bold">重命名</h3>
+        <button id="closeRenameModal" class="text-gray-400 hover:text-gray-600"><i class="fa fa-times"></i></button>
+      </div>
+      <div class="mb-6">
+        <label for="newFileName" class="block text-sm font-medium text-gray-700 mb-1">新名称</label>
+        <input type="text" id="newFileName" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary" value="">
+      </div>
+      <div class="flex justify-end space-x-3">
+        <button id="cancelRename" class="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">取消</button>
+        <button id="confirmRename" class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90">确认</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 删除确认模态框 -->
+  <div id="deleteModal" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50">
+    <div class="bg-white rounded-xl shadow-2xl w-full max-w-md p-6" onclick="event.stopPropagation()">
+      <div class="flex justify-between items-center mb-4">
+        <h3 class="text-xl font-bold text-red-600">删除文件</h3>
+        <button id="closeDeleteModal" class="text-gray-400 hover:text-gray-600"><i class="fa fa-times"></i></button>
+      </div>
+      <div class="mb-6">
+        <p class="text-gray-700">确定要删除 <span id="deleteFileName" class="font-medium"></span> 吗？此操作不可撤销。</p>
+      </div>
+      <div class="flex justify-end space-x-3">
+        <button id="cancelDelete" class="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">取消</button>
+        <button id="confirmDelete" class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700">删除</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ===================== 配置 =====================
+    const API_BASE = (new URLSearchParams(location.search)).get('api') || 'http://localhost:3000/api';
+    const PAGE_SIZE = 20;
+
+    // ===================== 状态 =====================
+    const state = {
+      currentPath: '/',
+      keyword: '',
+      page: 1,
+      total: 0,
+      loading: false,
+      hasMore: true,
+      actionTarget: null, // {name, type}
+    };
+
+    // ===================== DOM 引用 =====================
+    const el = {
+      newButton: document.getElementById('newButton'),
+      newMenu: document.getElementById('newMenu'),
+      newButtonContainer: document.getElementById('newButtonContainer'),
+      btnNewFolder: document.getElementById('btnNewFolder'),
+      btnUpload: document.getElementById('btnUpload'),
+      fileInput: document.getElementById('fileInput'),
+      searchInput: document.getElementById('searchInput'),
+      breadcrumbs: document.getElementById('breadcrumbs'),
+      fileList: document.getElementById('fileList'),
+      listLoader: document.getElementById('listLoader'),
+      sentinel: document.getElementById('sentinel'),
+      // 菜单 & 模态
+      actionMenu: document.getElementById('fileActionMenu'),
+      renameModal: document.getElementById('renameModal'),
+      deleteModal: document.getElementById('deleteModal'),
+      renameBtn: document.getElementById('renameButton'),
+      deleteBtn: document.getElementById('deleteButton'),
+      closeRenameModal: document.getElementById('closeRenameModal'),
+      closeDeleteModal: document.getElementById('closeDeleteModal'),
+      cancelRename: document.getElementById('cancelRename'),
+      confirmRename: document.getElementById('confirmRename'),
+      cancelDelete: document.getElementById('cancelDelete'),
+      confirmDelete: document.getElementById('confirmDelete'),
+      newFileName: document.getElementById('newFileName'),
+      deleteFileName: document.getElementById('deleteFileName'),
+    };
+
+    // ===================== 工具函数 =====================
+    const delay = (ms) => new Promise(r => setTimeout(r, ms));
+    const fmtBytes = (n) => {
+      if (n === 0) return '0 B';
+      const k = 1024; const sizes = ['B','KB','MB','GB','TB'];
+      const i = Math.floor(Math.log(n)/Math.log(k));
+      return (n/Math.pow(k,i)).toFixed(2) + ' ' + sizes[i];
+    }
+    const fmtTime = (iso) => {
+      try { return new Date(iso).toLocaleString(); } catch { return iso; }
+    }
+    const joinPath = (base, seg) => {
+      const b = base.endsWith('/') ? base.slice(0,-1) : base;
+      const s = seg.startsWith('/') ? seg.slice(1) : seg;
+      return (b + '/' + s).replace(/\\/g,'/').replace(/\/\/+/, '/');
+    }
+    const crumbParts = (path) => {
+      const p = path.replace(/\\/g,'/');
+      if (p === '/' || !p) return ['/'];
+      const parts = p.split('/').filter(Boolean);
+      const acc = ['/'];
+      let cur = '';
+      for (const part of parts) { cur += '/' + part; acc.push(cur); }
+      return acc;
+    }
+
+    function show(elm) { elm.classList.remove('hidden'); }
+    function hide(elm) { elm.classList.add('hidden'); }
+
+    function setLoading(v) {
+      state.loading = v;
+      if (v) show(el.listLoader); else hide(el.listLoader);
+    }
+
+    // ===================== API =====================
+    async function api(path, options) {
+      const r = await fetch(API_BASE + path, options);
+      if (!r.ok) {
+        const text = await r.text();
+        throw new Error(text || ('HTTP ' + r.status));
+      }
+      return r.json();
+    }
+    const apiList = (path, page, pageSize) => api(`/files?path=${encodeURIComponent(path)}&page=${page}&pageSize=${pageSize}`);
+    const apiSearch = (path, keyword) => api(`/search?path=${encodeURIComponent(path)}&keyword=${encodeURIComponent(keyword)}`);
+    const apiUpload = (path, file) => {
+      const fd = new FormData(); fd.append('path', path); fd.append('file', file);
+      return api('/upload', { method: 'POST', body: fd });
+    }
+    const apiNewFolder = (path, name='未命名文件') => api('/folder', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path, name }) });
+    const apiRename = (path, oldName, newName) => api('/rename', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path, oldName, newName }) });
+    const apiDelete = (path, name) => api('/file', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path, name }) });
+
+    // ===================== 渲染 =====================
+    function renderBreadcrumbs() {
+      const parts = crumbParts(state.currentPath);
+      el.breadcrumbs.innerHTML = '';
+      parts.forEach((p, idx) => {
+        const a = document.createElement('a');
+        a.href = '#';
+        a.className = 'hover:text-primary transition-colors';
+        a.textContent = (p === '/' ? '我的文件' : p.split('/').filter(Boolean).slice(-1)[0]);
+        a.addEventListener('click', (ev) => { ev.preventDefault(); navigate(p); });
+        el.breadcrumbs.appendChild(a);
+        if (idx < parts.length - 1) {
+          const sep = document.createElement('i');
+          sep.className = 'fa fa-angle-right mx-2 text-xs';
+          el.breadcrumbs.appendChild(sep);
+        }
+      });
+    }
+
+    function iconByType(item) {
+      if (item.type === 'folder') return '<i class="fa fa-folder text-2xl text-yellow-500 mr-3"></i>';
+      // 文件: 简单根据扩展名调整一下
+      const ext = (item.name.split('.').pop() || '').toLowerCase();
+      const map = { pdf: 'text-red-500 fa-file-pdf-o', png: 'text-blue-500 fa-file-image-o', jpg: 'text-blue-500 fa-file-image-o', jpeg: 'text-blue-500 fa-file-image-o', xlsx: 'text-green-600 fa-file-excel-o', xls: 'text-green-600 fa-file-excel-o', doc: 'text-blue-600 fa-file-word-o', docx: 'text-blue-600 fa-file-word-o', txt: 'text-gray-600 fa-file-text-o' };
+      const cls = map[ext] || 'text-gray-600 fa-file-o';
+      return `<i class="fa ${cls} text-2xl mr-3"></i>`;
+    }
+
+    function rowTpl(item) {
+      return `
+        <div class="file-row border-b border-gray-100" data-name="${encodeURIComponent(item.name)}" data-type="${item.type}">
+          <div class="col-span-6 flex items-center">
+            ${iconByType(item)}
+            ${item.type === 'folder' ? `<button class="text-left truncate hover:text-primary" data-action="enter">${item.name}</button>` : `<span class="truncate">${item.name}</span>`}
+            <span class="ml-3 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">${item.type}</span>
+          </div>
+          <div class="col-span-4 text-gray-500">${fmtTime(item.createdAt)}</div>
+          <div class="col-span-2 text-right">
+            <button class="file-more-btn text-gray-400 hover:text-primary transition-colors"><i class="fa fa-ellipsis-v"></i></button>
+          </div>
+        </div>`;
+    }
+
+    function appendRows(items) {
+      const frag = document.createElement('div');
+      frag.innerHTML = items.map(rowTpl).join('');
+      // 绑定事件
+      frag.querySelectorAll('[data-action="enter"]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const row = btn.closest('.file-row');
+          const name = decodeURIComponent(row.getAttribute('data-name'));
+          navigate(state.currentPath === '/' ? `/${name}` : joinPath(state.currentPath, name));
+        });
+      });
+      frag.querySelectorAll('.file-more-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => openActionMenu(e));
+      });
+      el.fileList.appendChild(frag);
+    }
+
+    function clearList() { el.fileList.innerHTML = ''; }
+
+    // ===================== 数据加载 =====================
+    async function loadPage(nextPage) {
+      if (state.loading) return; setLoading(true);
+      try {
+        const res = await apiList(state.currentPath, nextPage, PAGE_SIZE);
+        const { files, total } = res.data;
+        state.total = total;
+        if (nextPage === 1) clearList();
+        appendRows(files);
+        state.hasMore = nextPage * PAGE_SIZE < total;
+        state.page = nextPage;
+      } catch (e) {
+        console.error(e); alert('加载失败');
+      } finally { setLoading(false); }
+    }
+
+    async function doSearch() {
+      if (!state.keyword.trim()) { state.page = 1; state.hasMore = true; await loadPage(1); return; }
+      setLoading(true);
+      try {
+        const res = await apiSearch(state.currentPath, state.keyword.trim());
+        const { files, total } = res.data;
+        state.total = total;
+        clearList();
+        appendRows(files);
+        state.hasMore = false; // 搜索结果不分页
+        state.page = 1;
+      } catch (e) {
+        console.error(e); alert('搜索失败');
+      } finally { setLoading(false); }
+    }
+
+    // ===================== 交互：菜单/模态 =====================
+    function openActionMenu(ev) {
+      ev.stopPropagation();
+      const row = ev.currentTarget.closest('.file-row');
+      const name = decodeURIComponent(row.getAttribute('data-name'));
+      const type = row.getAttribute('data-type');
+      state.actionTarget = { name, type, row };
+      const rect = ev.currentTarget.getBoundingClientRect();
+      el.actionMenu.style.top = (rect.bottom + 6) + 'px';
+      el.actionMenu.style.left = Math.min(rect.left, window.innerWidth - 220) + 'px';
+      show(el.actionMenu);
+    }
+
+    function closeAllPopups() { hide(el.actionMenu); hide(el.renameModal); hide(el.deleteModal); }
+
+    // 重命名
+    function openRename() {
+      hide(el.actionMenu);
+      el.newFileName.value = state.actionTarget?.name || '';
+      el.renameModal.classList.remove('hidden');
+      el.renameModal.classList.add('flex');
+      el.newFileName.focus();
+    }
+    async function confirmRename() {
+      const oldName = state.actionTarget?.name; const newName = el.newFileName.value.trim();
+      if (!oldName || !newName || newName === oldName) { closeAllPopups(); return; }
+      try {
+        await apiRename(state.currentPath, oldName, newName);
+        await refresh();
+      } catch (e) { console.error(e); alert('重命名失败'); }
+      closeAllPopups();
+    }
+
+    // 删除
+    function openDelete() {
+      hide(el.actionMenu);
+      el.deleteFileName.textContent = state.actionTarget?.name || '';
+      el.deleteModal.classList.remove('hidden');
+      el.deleteModal.classList.add('flex');
+    }
+    async function confirmDelete() {
+      if (!state.actionTarget?.name) { closeAllPopups(); return; }
+      try {
+        await apiDelete(state.currentPath, state.actionTarget.name);
+        await refresh();
+      } catch (e) { console.error(e); alert('删除失败'); }
+      closeAllPopups();
+    }
+
+    // ===================== 导航 & 刷新 =====================
+    async function navigate(path) { state.currentPath = path; renderBreadcrumbs(); state.keyword = ''; el.searchInput.value = ''; state.page = 1; state.hasMore = true; await loadPage(1); }
+    async function refresh() { await navigate(state.currentPath); }
+
+    // ===================== 新建/上传 =====================
+    async function newFolder() {
+      try { await apiNewFolder(state.currentPath, '未命名文件'); await refresh(); }
+      catch (e) { console.error(e); alert('新建失败'); }
+    }
+    function triggerUpload() { el.fileInput.click(); }
+    async function onFileSelected(ev) {
+      const f = ev.target.files && ev.target.files[0];
+      if (!f) return; try { await apiUpload(state.currentPath, f); await refresh(); }
+      catch (e) { console.error(e); alert('上传失败'); }
+      finally { ev.target.value = ''; }
+    }
+
+    // ===================== 事件绑定 =====================
+    function bindGlobalEvents() {
+      // 新建按钮 hover 显示菜单；点击页面其他位置隐藏
+      el.newButton.addEventListener('mouseenter', () => show(el.newMenu));
+      el.newButtonContainer.addEventListener('mouseleave', (e) => { if (!el.newButton.contains(e.relatedTarget) && !el.newMenu.contains(e.relatedTarget)) hide(el.newMenu); });
+      document.addEventListener('click', () => { hide(el.newMenu); hide(el.actionMenu); });
+
+      // 新建菜单项
+      el.btnNewFolder.addEventListener('click', () => { hide(el.newMenu); newFolder(); });
+      el.btnUpload.addEventListener('click', () => { hide(el.newMenu); triggerUpload(); });
+      el.fileInput.addEventListener('change', onFileSelected);
+
+      // 操作菜单按钮
+      el.renameBtn.addEventListener('click', openRename);
+      el.deleteBtn.addEventListener('click', openDelete);
+
+      // 模态框操作
+      el.closeRenameModal.addEventListener('click', closeAllPopups);
+      el.cancelRename.addEventListener('click', closeAllPopups);
+      el.confirmRename.addEventListener('click', confirmRename);
+
+      el.closeDeleteModal.addEventListener('click', closeAllPopups);
+      el.cancelDelete.addEventListener('click', closeAllPopups);
+      el.confirmDelete.addEventListener('click', confirmDelete);
+
+      // 搜索（300ms 防抖）
+      let searchTimer = null;
+      el.searchInput.addEventListener('input', () => {
+        state.keyword = el.searchInput.value;
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(() => { doSearch(); }, 300);
+      });
+    }
+
+    // 无限滚动
+    function setupInfiniteScroll() {
+      const io = new IntersectionObserver(async (entries) => {
+        const [e] = entries; if (!e.isIntersecting) return;
+        if (state.keyword) return; // 搜索模式不分页
+        if (state.hasMore && !state.loading) { await loadPage(state.page + 1); }
+      }, { rootMargin: '300px' });
+      io.observe(el.sentinel);
+    }
+
+    // ===================== 启动 =====================
+    (async function init() {
+      bindGlobalEvents();
+      setupInfiniteScroll();
+      renderBreadcrumbs();
+      await loadPage(1);
+      // 欢迎提示：可选
+      console.log('API_BASE =', API_BASE);
+    })();
+  </script>
+</body>
 </html>
